@@ -1,0 +1,17 @@
+import request from '@/utils/request'
+
+export function getList(data) {
+return request.post('<%= path %>/list', data)
+}
+
+export function save(data) {
+return request.post('<%= path %>', data)
+}
+
+export function remove(id) {
+return request.delete(`<%= path %>`, { params: { id } })
+}
+
+export function get(id) {
+return request.get(`<%= path %>`, { params: { id } })
+}

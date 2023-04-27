@@ -1,0 +1,251 @@
+<template>
+  <n-space vertical class="app-container">
+    <n-space>
+      <% if(searchGroup.isOpen) { searchGroup.group.map(group => { %>
+      <n-input-group>
+        <n-select
+          style="width: fit-content"
+          :consistent-menu-width="false"
+          :options="<%=group.label%>GroupOptionsState.options"
+          v-model:value="<%=group.label%>GroupOptionsState.currentField"
+        />
+        <n-input
+          style="width: 67%"
+          v-model:value="listQuery.<%=group.searchType%>Query[<%=group.label%>GroupOptionsState.currentField]"
+          placeholder="请输入搜索内容"
+          clearable
+        />
+      </n-input-group>
+      <%})} else { tableSettings.map(setting => { if(setting.searchType) {%>
+      <n-input
+        v-model:value="listQuery.<%=setting.searchType%>Query.<%=setting.key%>"
+        placeholder="<%=setting.title%>搜索"
+        clearable
+        @keyup="pageState.enterSearch"
+      />
+      <%} })}%>
+      <search-button :loading="pageState.loading" @click="pageState.search" />
+      <add-button @click="handleAdd" />
+    </n-space>
+    <n-data-table
+      ref="tableRef"
+      remote
+      :loading="pageState.loading"
+      :columns="columns"
+      :data="pageState.list"
+      :pagination="pageState"
+      :scroll-x="tableWidth"
+      :max-height="tableHeight"
+      :min-height="tableHeight"
+    />
+    <% if(actionSettings.findIndex((item)=>{ return item.key ==='edit'}) !==-1){
+    %>
+    <n-modal
+      v-model:title="formState.formTitle"
+      v-model:show="formState.formVisible"
+      preset="dialog"
+      :show-icon="false"
+    >
+      <n-form
+        ref="formRef"
+        :model="formState.form"
+        label-placement="left"
+        label-width="80px"
+      >
+        <% tableSettings.map((table)=>{ -%>
+        <n-form-item label="<%=table.label%>" path="<%=table.key%>">
+          <% if(table.isEdit&&table.editType ==='input') {-%>
+          <n-input v-model:value="formState.form.<%=table.key-%>" />
+          <% }else if(table.isEdit&&table.editType ==='select') {-%>
+          <n-select
+            v-model:value="formState.form.<%=table.key-%>"
+            :options="<%=table.key%>Options"
+          />
+          <% }else if(table.isEdit&&table.editType ==='switch') {-%>
+          <n-switch
+            v-model:value="formState.form.<%=table.key-%>"
+            checked-value="1"
+            unchecked-value="0"
+          />
+          <% }else if(table.isEdit&&table.editType ==='radio') {-%>
+          <n-radio-group v-model:value="formState.form.<%=table.key-%>">
+            <n-radio
+              v-for="option in <%=table.key%>Options"
+              :value="option.value"
+              :label="option.label"
+              :key="option.value"
+            />
+          </n-radio-group>
+          <% }else if(table.isEdit&&table.editType ==='checkbox') {-%>
+          <n-checkbox-group v-model:value="formState.form.<%=table.key-%>">
+            <n-space item-style="display: flex;">
+              <n-checkbox
+                v-for="option in <%=table.key%>Options"
+                :value="option.value"
+                :label="option.label"
+                :key="option.value"
+              />
+            </n-space>
+          </n-checkbox-group>
+          <% }%>
+        </n-form-item>
+        <%}) -%>
+      </n-form>
+      <template #action>
+        <n-space>
+          <n-button
+            :loading="formState.formLoading"
+            @click="formState.formVisible = false"
+            >取消</n-button
+          >
+          <n-button
+            type="primary"
+            :loading="formState.formLoading"
+            @click="handleSubmit"
+            >确认</n-button
+          >
+        </n-space>
+      </template>
+    </n-modal>
+    <% } %>
+  </n-space>
+</template>
+
+<script lang="jsx" setup>
+     import {
+       getList,
+       remove,
+       save
+     } from "@/api/study/subject";
+     import SearchButton from "@/components/button/SearchButton.jsx";
+     import AddButton from "@/components/button/AddButton.jsx";
+     import { reactive } from "vue";
+     import {
+       useNaiveColumns,
+       useNaivePage,
+       <% if (actionSettings.length !==0) { _%>
+       createActionColumn
+       <% } -%>
+     } from "@/use/useNaivePage";
+
+
+     <% if (actionList.includes('edit')) { %>
+     import {
+       useCommonForm
+     } from '@/use/useCommonForm'
+     <% } %>
+
+     <%# 创建option %>
+     <% tableSettings.map(setting => {
+     if (setting.options.length) { %>
+       const <%= setting.key %>Options = [
+         <% setting.options.forEach(option => { %>
+           { label: '<%= option.label %>', value: <%= option.value %> },
+         <% }) %>
+       ];
+     <% }
+   }) %>
+
+    <%# 创建搜索组 %>
+    <% for (const group of searchGroup.group) {
+    const options = tableSettings.filter(option => option.belongSearchGroup === group.value).map(option => ({ label: option.title, value: option.key }))
+    const currentField =  options[0].value;
+    %>
+    const <%= group.label %>GroupOptionsState = reactive({
+      currentField: '<%= currentField %>',
+      options: <%-JSON.stringify(options)%>
+    });
+  <% } %>
+
+     const {
+       columns,
+       tableWidth
+     } = useNaiveColumns([
+       <% tableSettings.map(setting => { %> {
+         key: '<%= setting.key %>',
+         title: '<%= setting.title %>'
+       },
+       <% }); -%>
+       <% if (actionSettings.length !== 0) { %>
+       createActionColumn([
+         <% actionSettings.map((action) => { -%>
+         <% if (action.key === 'edit') { -%> {
+           type: 'primary',
+           label: '编辑',
+           onClick: (row) => {
+             formState.edit(row)
+           },
+         },
+         <% } else if (action.key === 'delete') { -%> {
+           type: 'error',
+           label: '删除',
+           onClick: (row) => handleRemove(row),
+         },
+         <% } else { -%> {
+           type: '<%= action.type %>',
+           label: '<%= action.label %>',
+         },
+         <% } -%>
+         <% });%>
+       ])
+       <% } %>
+     ]);
+
+     // 表格分页控制
+     const {
+       pageState,
+       listQuery,
+       tableRef,
+       tableHeight
+     } = useNaivePage(() => {
+       pageState.showLoading();
+       getList(listQuery)
+         .then((res) => {
+           pageState.list = res.data.records;
+           pageState.itemCount = res.data.total;
+         })
+         .finally(() => pageState.hideLoading());
+     });
+     pageState.fetchData();
+
+     <% if (actionList.includes('edit')) { %>
+     const {
+       formState,
+       formRef
+     } = useCommonForm()
+
+     function handleSubmit() {
+       // 表单提交
+       formRef.value.validate((error) => {
+         if (!error) {
+           formState.formLoading = true
+           save(formState.form)
+             .then(() => {
+               pageState.fetchData()
+               formState.formVisible = false
+             })
+             .finally(() => (formState.formLoading = false))
+         }
+       })
+     }
+     <% } %>
+
+     <% if (actionList.includes('delete')) { %>
+     // 删除某一项
+     function handleRemove(row) {
+       $dialog.error({
+         title: '警告',
+         content: '确定删除该记录？',
+         positiveText: '确定',
+         negativeText: '取消',
+         onPositiveClick: () => {
+           remove(row.id).then((res) => {
+             $message.success('删除成功')
+             pageState.fetchData()
+           })
+         },
+         onNegativeClick: () => {}
+       })
+     }
+     <% } %>
+</script>
